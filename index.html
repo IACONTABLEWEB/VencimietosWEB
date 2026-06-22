@@ -114,11 +114,12 @@ h4{font-size:12px;margin-bottom:3px;font-weight:700}
 <body>
 
 <!-- PANTALLA DE BIENVENIDA -->
-<div id="pantalla-inicio" style="position:fixed;inset:0;background:#1B2A4A;z-index:9999;display:flex;align-items:center;justify-content:center">
+<div id="pantalla-inicio" style="position:fixed;inset:0;background:#1B2A4A;z-index:9999;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:6px;padding:40px 48px;width:420px;max-width:94vw;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3)">
     <div id="logo-inicio" style="margin-bottom:22px"></div>
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#8aa4bf;margin-bottom:4px">Casal Vecchi Rodriguez Spuch y Asoc.</div>
     <div style="font-size:18px;font-weight:700;color:#1B2A4A;margin-bottom:28px">Sistema de Vencimientos 2026</div>
+    <div id="inicio-cargando" style="color:#8aa4bf;font-size:13px;margin-bottom:16px">Cargando empresas...</div>
     <div style="text-align:left;margin-bottom:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8aa4bf">Empresa</div>
     <select id="inicio-empresa" style="width:100%;padding:10px 12px;font-size:14px;border:1px solid #c5cedd;border-radius:4px;font-family:'Segoe UI',Arial,sans-serif;color:#1B2A4A;background:#f8fafc;margin-bottom:16px">
       <option value="">-- Seleccione una empresa --</option>
@@ -2102,85 +2103,9 @@ function confirmarModalAnual(emp, id){
   cerrarModal();
   document.getElementById("selEmp").value=emp;
   render();filtrarCatalogo();
-  renderListaExtra(emp,document.getElementById("selPer").value||per);
-  guardarPerfilNube(emp);
-  if(guardados>0) setTimeout(function(){alert("Guardado en "+guardados+" mes"+(guardados!==1?"es":"")+".");},100);
-}
-  var p=PERFILES[emp];
-  var MESES_LABEL=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-  var periodos=PERIODOS_LISTA.filter(function(k){return k.slice(0,4)==="2026";});
-
-  var rows="";
-  periodos.forEach(function(pKey){
-    var mesIdx=+pKey.split("-")[1]-1;
-    // Fecha sugerida: automática si existe, o la que ya estaba guardada
-    var sugerida="";
-    var resAuto=ob.calcFecha(pKey,p);
-    if(resAuto) sugerida=resAuto.fecha;
-    // Si ya tiene item manual guardado, usarlo como valor
-    var yaItems=(p.extras[pKey]&&p.extras[pKey].items)||[];
-    var yaItem=yaItems.filter(function(x){return x._catId===id;})[0];
-    if(yaItem) sugerida=yaItem.fecha;
-
-    var fechaVal=sugerida||"";
-    rows+='<tr>'
-      +'<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+MESES_LABEL[mesIdx]+' 2026</td>'
-      +'<td style="padding:6px 10px"><input type="date" class="ficha-inp modal-fecha-row" data-per="'+pKey+'" value="'+fechaVal+'" style="width:150px"></td>'
-      +'<td style="padding:6px 10px;color:#888;font-size:12px">'+(sugerida?'Sugerida: '+fi(sugerida):'—')+'</td>'
-      +'</tr>';
-  });
-
-  var html='<div style="background:#fff;border-radius:8px;padding:28px 32px;max-width:520px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.18)">'
-    +'<h3 style="margin:0 0 4px;color:#1a3f6b;font-size:16px">'+ob.label+'</h3>'
-    +'<p style="margin:0 0 16px;color:#555;font-size:13px">Empresa: <strong>'+p.razonSocial+'</strong></p>'
-    +'<p style="margin:0 0 12px;color:#666;font-size:13px">Ingresá la fecha de vencimiento para cada mes. Las fechas sugeridas se calculan automáticamente según el CUIT.</p>'
-    +'<table style="width:100%;border-collapse:collapse">'
-    +'<thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a3f6b;color:#1a3f6b">Mes</th>'
-    +'<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a3f6b;color:#1a3f6b">Fecha</th>'
-    +'<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a3f6b;color:#1a3f6b">Referencia</th></tr></thead>'
-    +'<tbody>'+rows+'</tbody>'
-    +'</table>'
-    +'<div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">'
-    +'<button onclick="cerrarModal()" style="padding:8px 18px;border:1px solid #ccc;background:#fff;border-radius:4px;cursor:pointer">Cancelar</button>'
-    +'<button onclick="confirmarModalAnual(\''+emp+'\',\''+id+'\')" style="padding:8px 18px;background:#1a3f6b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">Guardar en todos los meses</button>'
-    +'</div>'
-    +'</div>';
-
-  var overlay=document.getElementById("modalOverlay");
-  overlay.innerHTML=html;
-  overlay.style.display="flex";
-}
-
-function confirmarModalAnual(emp, id){
-  var p=PERFILES[emp];
-  var ob=CATALOGO.filter(function(x){return x.id===id;})[0];
-  if(!ob)return;
-  var inputs=document.querySelectorAll(".modal-fecha-row");
-  var guardados=0;
-  inputs.forEach(function(inp){
-    var pKey=inp.getAttribute("data-per");
-    var fecha=inp.value;
-    if(!fecha) return; // mes sin fecha: no tocar
-    if(!p.extras[pKey])p.extras[pKey]={notas:[],items:[],excluidos:[]};
-    if(!p.extras[pKey].excluidos)p.extras[pKey].excluidos=[];
-    if(!p.extras[pKey].items)p.extras[pKey].items=[];
-    // Quitar de excluidos
-    p.extras[pKey].excluidos=p.extras[pKey].excluidos.filter(function(x){return x!==id;});
-    // Calcular detalle desde el catálogo
-    var res=ob.calcFecha(pKey,p);
-    var detalle=res?res.detalle:(ob.label+" CUIT "+p.terminacion);
-    var org=res?res.org:(ob.org||"");
-    // Reemplazar si ya existe
-    p.extras[pKey].items=p.extras[pKey].items.filter(function(x){return x._catId!==id;});
-    p.extras[pKey].items.push({fecha:fecha,detalle:detalle,org:org,_catId:id,_auto:false});
-    guardados++;
-  });
-  cerrarModal();
-  document.getElementById("selEmp").value=emp;
-  render();filtrarCatalogo();
   renderListaExtra(emp,document.getElementById("selPer").value);
   guardarPerfilNube(emp);
-  if(guardados>0) setTimeout(function(){alert("Vencimiento agregado en "+guardados+" mes"+(guardados!==1?"es":"")+".");},100);
+  if(guardados>0) setTimeout(function(){alert("Guardado en "+guardados+" mes"+(guardados!==1?"es":"")+".");},100);
 }
 
 function abrirSelector(){
@@ -3679,6 +3604,10 @@ cargarDesdeNube(function(){
   var logoEl=document.getElementById("logo-inicio");
   if(logoEl&&typeof LOGO_SRC!=="undefined")
     logoEl.innerHTML='<img src="'+LOGO_SRC+'" style="height:38px;width:auto;max-width:100%;display:block;margin:0 auto" alt="Logo">';
+  // Ocultar mensaje de cargando
+  var cargando=document.getElementById("inicio-cargando");
+  if(cargando) cargando.style.display="none";
+  // Mostrar pantalla de inicio DESPUÉS de que los datos ya están en el select
   document.getElementById("pantalla-inicio").style.cssText="position:fixed;inset:0;background:#1B2A4A;z-index:9999;display:flex;align-items:center;justify-content:center";
   document.getElementById("app-main").style.display="none";
 });
