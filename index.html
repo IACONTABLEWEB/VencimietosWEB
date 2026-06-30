@@ -1037,8 +1037,8 @@ function completarFechasExtra(){
     var mes=+inp.getAttribute("data-mes");
     var anioVal=inp.getAttribute("data-anio")||"2026";
     // Día 20 del mes como sugerencia
-    var dia="20";
-    var fechaStr=dia+"/"+(mes<10?"0":""+mes)+"/"+anioVal;
+    var mesStr=mes<10?("0"+mes):(""+mes);
+    var fechaStr="20/"+mesStr+"/"+anioVal;
     // Setear en Flatpickr
     if(inp._flatpickr){
       inp._flatpickr.setDate(fechaStr,true,"d/m/Y");
@@ -1076,20 +1076,30 @@ function guardarObligacionAnual(){
   var org=document.getElementById("cOrg").value;
   if(!det){alert("Ingres\u00e1 el nombre de la obligaci\u00f3n.");return;}
   if(!eKey){alert("Seleccion\u00e1 una empresa.");return;}
+  if(!PERFILES[eKey]){alert("Empresa no encontrada.");return;}
   var p=PERFILES[eKey];
   var inputs=document.querySelectorAll(".carga-mes-inp");
   var guardados=0;
   inputs.forEach(function(inp){
     var pKey=inp.getAttribute("data-per");
-    var val=inp._flatpickr?inp._flatpickr.input.value:inp.value;
-    var fecha=parseFechaExtra(val);
+    var fecha="";
+    if(inp._flatpickr && inp._flatpickr.selectedDates && inp._flatpickr.selectedDates.length){
+      var d=inp._flatpickr.selectedDates[0];
+      var yyyy=d.getFullYear();
+      var mm=("0"+(d.getMonth()+1)).slice(-2);
+      var dd=("0"+d.getDate()).slice(-2);
+      fecha=yyyy+"-"+mm+"-"+dd;
+    } else if(inp.value){
+      fecha=parseFechaExtra(inp.value);
+    }
     if(!fecha) return;
     if(!p.extras[pKey])p.extras[pKey]={notas:[],items:[],excluidos:[]};
     if(!p.extras[pKey].items)p.extras[pKey].items=[];
+    if(!p.extras[pKey].excluidos)p.extras[pKey].excluidos=[];
     p.extras[pKey].items.push({fecha:fecha,detalle:det,org:org,_auto:false});
     guardados++;
   });
-  if(!guardados){alert("No hay fechas ingresadas.");return;}
+  if(!guardados){alert("No hay fechas ingresadas. Hac\u00e9 clic en cada campo de mes y seleccion\u00e1 una fecha del calendario.");return;}
   limpiarFormExtra();
   var perActual=document.getElementById("selPer")?document.getElementById("selPer").value:"";
   renderListaExtra(eKey,perActual||Object.keys(PERFILES[eKey].extras||{})[0]||"2026-01");
