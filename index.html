@@ -582,9 +582,51 @@ function rangoMes(k){
   var n=MESES_L[m-1];n=n[0].toUpperCase()+n.slice(1);
   return "Del 01 al "+(""+ul).padStart(2,"0")+" de "+n+" de "+y;
 }
+
+// ═══ FERIADOS NACIONALES 2026 ════════════════════════════════════════
+// Fuente: Ley 27.399 + Resolución 164/2025 (días no laborables turísticos)
+// Regla ARCA: si vence en feriado o fin de semana → pasa al DÍA HÁBIL SIGUIENTE
+var FERIADOS_2026 = {
+  "2026-01-01":1,"2026-02-16":1,"2026-02-17":1,
+  "2026-03-23":1,"2026-03-24":1,
+  "2026-04-02":1,"2026-04-03":1,
+  "2026-05-01":1,"2026-05-25":1,
+  "2026-06-15":1,"2026-06-20":1,
+  "2026-07-09":1,"2026-07-10":1,
+  "2026-08-17":1,
+  "2026-10-12":1,
+  "2026-11-23":1,
+  "2026-12-07":1,"2026-12-08":1,"2026-12-25":1
+};
+
+function esFeriado(fecha){
+  return !!FERIADOS_2026[fecha];
+}
+
+function esFinDeSemana(fecha){
+  var d=new Date(fecha+"T12:00:00");
+  var dow=d.getDay(); // 0=dom, 6=sab
+  return dow===0||dow===6;
+}
+
+function siguienteHabil(fecha){
+  // Mueve la fecha al próximo día hábil si cae en feriado o fin de semana
+  var d=new Date(fecha+"T12:00:00");
+  var max=20; // seguridad: máx 20 iteraciones
+  while((esFinDeSemana(fecha)||esFeriado(fecha)) && max-->0){
+    d.setDate(d.getDate()+1);
+    var yyyy=d.getFullYear();
+    var mm=("0"+(d.getMonth()+1)).slice(-2);
+    var dd=("0"+d.getDate()).slice(-2);
+    fecha=yyyy+"-"+mm+"-"+dd;
+  }
+  return fecha;
+}
+
 function mkF(pKey,dd){
   var p=pKey.split("-"),y=+p[0],m=+p[1];
-  return y+"-"+(""+m).padStart(2,"0")+"-"+(""+dd).padStart(2,"0");
+  var fecha=y+"-"+(""+m).padStart(2,"0")+"-"+(""+dd).padStart(2,"0");
+  return siguienteHabil(fecha);
 }
 function mesSig(pKey){
   var p=pKey.split("-"),y=+p[0],m=+p[1];
