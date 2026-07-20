@@ -776,7 +776,7 @@ function generarAutomaticos(eKey, pKey){
     if(p[pr[0]]) items.push({fecha:mkF(pKey,20),detalle:pr[1]+p.terminacion,org:pr[2],_catId:pr[3]});
   });
 
-  return tagCatId(items);
+  var _cierreMes=+(p.cierreEjercicio||12);if(_cierreMes===am){var _ultDia=new Date(ay,am,0).getDate();var _fCierre=ay+"-"+(""+am).padStart(2,"0")+"-"+(""+_ultDia).padStart(2,"0");items.push({fecha:_fCierre,detalle:"Cierre de ejercicio",org:"ARCA",_catId:"cierre_ejercicio"});}return tagCatId(items);
 }
 function render(){
   var eKey=document.getElementById("selEmp").value;
