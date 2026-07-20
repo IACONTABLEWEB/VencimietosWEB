@@ -309,6 +309,27 @@ h4{font-size:12px;margin-bottom:3px;font-weight:700}
     </div>
     <div id="formPerfil"></div>
   </div>
+
+  <div class="pbox">
+    <h3>Respaldo y recuperación de datos</h3>
+    <div class="info">Exportá un respaldo de todos los perfiles (JSON), o importá datos — por ejemplo, los recuperados de Supabase — y se guardan en JSONBin.</div>
+    <div class="frow" style="margin-bottom:10px">
+      <button class="btn-g blue" onclick="exportarPerfilesJSON()">⬇ Exportar respaldo (JSON)</button>
+      <button class="btn-g" style="background:#555" onclick="mostrarBinId()">Ver ID del bin (JSONBin)</button>
+    </div>
+    <div class="warn">Para recuperar datos de Supabase: pegá abajo el JSON exportado desde el Table Editor de Supabase (la columna <b>datos</b> de cada fila, o el objeto completo <code>{"perfiles":{...}}</code>). El sistema detecta ambos formatos.</div>
+    <div class="fg" style="margin-bottom:8px">
+      <label>JSON a importar</label>
+      <textarea id="importJSON" style="width:100%;min-height:130px;font-family:monospace;font-size:11px" placeholder='Pegá aquí el JSON de perfiles...'></textarea>
+    </div>
+    <div class="frow">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="importMerge" checked> Combinar con lo existente (destildar = reemplazar todo)
+      </label>
+      <button class="btn-g green" onclick="importarPerfilesJSON()">⬆ Importar y guardar en JSONBin</button>
+    </div>
+    <div id="importResultado" style="margin-top:8px;font-size:12px"></div>
+  </div>
 </div>
 
 <div id="view-ref" class="panel">
@@ -1531,14 +1552,9 @@ function eliminarEmpresa(){
   // Eliminar de memoria
   delete PERFILES[eKey];
 
-  // Eliminar de Supabase
-  fetch(SB_URL+"/rest/v1/"+SB_TABLE+"?id=eq."+encodeURIComponent(eKey),{
-    method:"DELETE",
-    headers:{"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY}
-  }).then(function(r){
-    if(r.ok) mostrarEstado("Empresa eliminada","#2e7d32");
-    else mostrarEstado("Error al eliminar","#c0392b");
-  }).catch(function(){ mostrarEstado("Sin conexi\u00f3n","#c0392b"); });
+  // Persistir la eliminaci\u00f3n en JSONBin (guarda el set completo ya sin esta empresa)
+  guardarTodosNube();
+  mostrarEstado("Empresa eliminada","#2e7d32");
 
   // Actualizar toda la interfaz
   poblarSelects();
@@ -2271,7 +2287,7 @@ document.addEventListener("click",function(e){
     abrirModalAnual(emp,per,id,ob);
     return;
   } else if(accion==="quitar"||accion==="quitar-auto"){
-    // Sacar de items Y agregar a excluidos — persiste en Supabase
+    // Sacar de items Y agregar a excluidos — persiste en JSONBin
     var p2=PERFILES[emp];
     if(!p2.extras[per])p2.extras[per]={notas:[],items:[],excluidos:[]};
     if(!p2.extras[per].excluidos)p2.extras[per].excluidos=[];
@@ -3523,83 +3539,7 @@ function serializarPerfil(p){
   };
 }
 
-// Guardar UN perfil en Supabase (upsert)
-function guardarPerfilNube(eKey){
-  var datos = serializarPerfil(PERFILES[eKey]);
-  fetch(SB_URL+"/rest/v1/"+SB_TABLE, {
-    method: "POST",
-    headers: {
-      "apikey": SB_KEY,
-      "Authorization": "Bearer "+SB_KEY,
-      "Content-Type": "application/json",
-      "Prefer": "resolution=merge-duplicates"
-    },
-    body: JSON.stringify({id:eKey, datos:datos})
-  })
-  .then(function(r){
-    if(r.ok) mostrarEstado("Guardado en la nube","#2e7d32");
-    else mostrarEstado("Error al guardar","#c0392b");
-  })
-  .catch(function(){ mostrarEstado("Sin conexión","#c0392b"); });
-}
-
-// Guardar TODOS los perfiles
-function guardarTodosNube(){
-  Object.keys(PERFILES).forEach(function(k){ guardarPerfilNube(k); });
-}
-
-// Cargar todos los perfiles desde Supabase
-function cargarDesdeNube(callback){
-  mostrarEstado("⟳ Cargando...","#1a5276");
-  fetch(SB_URL+"/rest/v1/"+SB_TABLE+"?select=*", {
-    headers: {
-      "apikey": SB_KEY,
-      "Authorization": "Bearer "+SB_KEY
-    }
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(rows){
-    if(!rows||!rows.length){ mostrarEstado("",""); if(callback) callback(); return; }
-    rows.forEach(function(row){
-      var k = row.id;
-      var d = row.datos;
-      if(!d) return;
-      if(!PERFILES[k]) PERFILES[k] = {extras:{}};
-      var p = PERFILES[k];
-      // Restaurar todos los campos
-      ["razonSocial","denominacion","cuit","terminacion","grupo","grupoSicore","grupoAuton",
-       "tipoSujeto","tipoSociedad","cierreEjercicio","agenciaARCA","condicionIVA",
-       "iibbJurisdiccion","cuitIIBB",
-       "tieneIVA","tieneSicore","tieneConvenio","tieneGanancias","tieneBP",
-       "tieneAuton0123","tieneAuton456","tieneAuton789",
-       "tieneEmpleados","tieneArba","tieneAgip","tieneMisiones"
-      ].forEach(function(f){ if(d[f]!==undefined) p[f]=d[f]; });
-      // Restaurar extras incluyendo excluidos
-      if(d.extras){
-        p.extras = p.extras||{};
-        Object.keys(d.extras).forEach(function(mes){
-          var blq = d.extras[mes];
-          var tieneAlgo = (blq.items&&blq.items.length)
-                       || (blq.notas&&blq.notas.length)
-                       || (blq.excluidos&&blq.excluidos.length);
-          if(tieneAlgo){
-            p.extras[mes] = {
-              notas:     blq.notas    ||[],
-              items:     blq.items    ||[],
-              excluidos: blq.excluidos||[]
-            };
-          }
-        });
-      }
-    });
-    mostrarEstado("Datos cargados","#2e7d32");
-    if(callback) callback();
-  })
-  .catch(function(){
-    mostrarEstado("Sin conexión — usando datos locales","#e67e22");
-    if(callback) callback();
-  });
-}
+// (Funciones Supabase eliminadas — persistencia 100% en JSONBin, ver sección JSONBIN.IO abajo)
 
 // ─── INICIO ──────────────────────────────────────────────────────────
 ["selector","carga","perfil","ref","nov"].forEach(function(v){
@@ -3732,6 +3672,92 @@ function cargarDesdeNube(callback){
 }
 
 // Ping ya no necesario — JSONBin no se pausa
+
+// ═══ RESPALDO / IMPORTACIÓN MANUAL DE DATOS ══════════════════════════
+// Exportar todos los perfiles como archivo JSON descargable
+function exportarPerfilesJSON(){
+  var todos={};
+  Object.keys(PERFILES).forEach(function(k){ todos[k]=serializarPerfil(PERFILES[k]); });
+  var payload={perfiles:todos, _exportado:new Date().toISOString()};
+  var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="respaldo-vencimientos-"+new Date().toISOString().slice(0,10)+".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  mostrarEstado("Respaldo descargado","#2e7d32");
+}
+
+// Mostrar el ID del bin de JSONBin (para diagnóstico / compartir entre navegadores)
+function mostrarBinId(){
+  var id=JB_BIN_ID||"(todavía no se creó — se genera al guardar por primera vez)";
+  var el=document.getElementById("importResultado");
+  if(el) el.innerHTML='<span style="color:#1a3f6b">ID del bin JSONBin: <b>'+id+'</b></span>';
+}
+
+// Normaliza cualquier entrada al formato { clave: perfilSerializado }
+// Acepta: {perfiles:{...}}  |  {clave:{...}}  |  [ {id,datos}, ... ]  (filas Supabase)
+function _normalizarImport(raw){
+  var out={};
+  if(Array.isArray(raw)){
+    // Filas estilo Supabase: [{id, datos}, ...]
+    raw.forEach(function(row){
+      if(row && row.id && row.datos) out[row.id]=row.datos;
+    });
+    return out;
+  }
+  if(raw && raw.perfiles && typeof raw.perfiles==="object") return raw.perfiles;
+  if(raw && typeof raw==="object") return raw; // ya es {clave:perfil}
+  return out;
+}
+
+// Importar JSON pegado, mergear/reemplazar en PERFILES y guardar en JSONBin
+function importarPerfilesJSON(){
+  var el=document.getElementById("importResultado");
+  var txt=(document.getElementById("importJSON").value||"").trim();
+  if(!txt){ el.innerHTML='<span style="color:#c0392b">Pegá el JSON primero.</span>'; return; }
+  var raw;
+  try{ raw=JSON.parse(txt); }
+  catch(e){ el.innerHTML='<span style="color:#c0392b">JSON inválido: '+e.message+'</span>'; return; }
+  var entrantes=_normalizarImport(raw);
+  var claves=Object.keys(entrantes);
+  if(!claves.length){ el.innerHTML='<span style="color:#c0392b">No se detectaron perfiles en el JSON.</span>'; return; }
+  var merge=document.getElementById("importMerge").checked;
+  if(!merge){
+    if(!confirm("Vas a REEMPLAZAR todos los perfiles actuales por los "+claves.length+" importados. ¿Continuar?")) return;
+    // Borrar todos menos re-crear desde import
+    Object.keys(PERFILES).forEach(function(k){ delete PERFILES[k]; });
+  }
+  var n=0;
+  claves.forEach(function(k){
+    var d=entrantes[k];
+    if(!d||typeof d!=="object") return;
+    if(!PERFILES[k]) PERFILES[k]={extras:{}};
+    var p=PERFILES[k];
+    ["razonSocial","denominacion","cuit","terminacion","grupo","grupoSicore","grupoAuton",
+     "tipoSujeto","tipoSociedad","cierreEjercicio","agenciaARCA","condicionIVA",
+     "iibbJurisdiccion","cuitIIBB",
+     "tieneIVA","tieneSicore","tieneConvenio","tieneGanancias","tieneBP",
+     "tieneAuton0123","tieneAuton456","tieneAuton789",
+     "tieneEmpleados","tieneArba","tieneAgip","tieneMisiones"
+    ].forEach(function(campo){ if(d[campo]!==undefined) p[campo]=d[campo]; });
+    if(d.extras){
+      p.extras=p.extras||{};
+      Object.keys(d.extras).forEach(function(mes){
+        var blq=d.extras[mes]||{};
+        p.extras[mes]={notas:blq.notas||[],items:blq.items||[],excluidos:blq.excluidos||[]};
+      });
+    }
+    n++;
+  });
+  guardarTodosNube();
+  poblarSelects();
+  poblarSelectInicio();
+  if(typeof cargarPerfil==="function") cargarPerfil();
+  render();
+  el.innerHTML='<span style="color:#2e7d32">✓ '+n+' perfil(es) importado(s) y guardado(s) en JSONBin.</span>';
+  document.getElementById("importJSON").value="";
+}
+
 
 cargarDesdeNube(function(){
   poblarSelects();
