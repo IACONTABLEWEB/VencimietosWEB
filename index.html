@@ -776,7 +776,7 @@ function generarAutomaticos(eKey, pKey){
     if(p[pr[0]]) items.push({fecha:mkF(pKey,20),detalle:pr[1]+p.terminacion,org:pr[2],_catId:pr[3]});
   });
 
-  var _cierreMes=+(p.cierreEjercicio||12);if(_cierreMes===am){var _ultDia=new Date(ay,am,0).getDate();var _fCierre=ay+"-"+(""+am).padStart(2,"0")+"-"+(""+_ultDia).padStart(2,"0");items.push({fecha:_fCierre,detalle:"Cierre de ejercicio",org:"ARCA",_catId:"cierre_ejercicio"});}return tagCatId(items);
+  return tagCatId(items);
 }
 function render(){
   var eKey=document.getElementById("selEmp").value;
@@ -3475,10 +3475,12 @@ function getFechaProv(provKey, pKey, terminacion){
 }
 
 
-// ═══ SUPABASE — PERSISTENCIA EN LA NUBE ══════════════════════════════
-var SB_URL = "https://pxuxhwwufkskfnivlqlu.supabase.co";
-var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4dXhod3d1Zmtza2ZuaXZscWx1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MjI1MTMsImV4cCI6MjA5NzI5ODUxM30.obxiPQxGHxQdePm-lAOmiRZ6yISDPlZdaFotldzYHqM";
-var SB_TABLE = "perfiles";
+// ═══ JSONBIN.IO — PERSISTENCIA EN LA NUBE ════════════════════════════
+// Un solo bin guarda todos los perfiles como objeto {perfiles: {...}}
+// BIN_ID: se crea automáticamente en el primer uso
+var JB_KEY = "$2a$10$OHmyWTrDLuOQas50AOpmDOa3SfMDG3YIvX7.TY50uDX8p/wsqn0Uy";
+var JB_BIN_ID = localStorage.getItem("cvrs_bin_id")||"";
+var JB_URL = "https://api.jsonbin.io/v3/b";
 
 // Indicador de estado de guardado
 function mostrarEstado(msg, color){
@@ -3630,54 +3632,106 @@ document.addEventListener("DOMContentLoaded",function(){
 });
 
 // ── GUARDADO GARANTIZADO ────────────────────────────────────────────
-var _saveQueue={}, _saveTimers={};
+var _saveTimer=null;
 function guardarPerfilNube(eKey){
-  if(!PERFILES[eKey]) return;
-  _saveQueue[eKey]=serializarPerfil(PERFILES[eKey]);
-  clearTimeout(_saveTimers[eKey]);
-  _saveTimers[eKey]=setTimeout(function(){ _flushSave(eKey); }, 300);
+  // Guarda todos los perfiles juntos en un solo bin
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(function(){ _flushSave(); }, 400);
 }
-function _flushSave(eKey){
-  var datos=_saveQueue[eKey]; if(!datos) return;
-  delete _saveQueue[eKey];
+function guardarTodosNube(){ _flushSave(); }
+
+function _flushSave(){
+  var todos={};
+  Object.keys(PERFILES).forEach(function(k){ todos[k]=serializarPerfil(PERFILES[k]); });
   mostrarEstado("Guardando...","#e67e22");
-  _doSave(eKey,datos,0);
+  _doSave(todos,0);
 }
-function _doSave(eKey,datos,intento){
-  fetch(SB_URL+"/rest/v1/"+SB_TABLE,{
-    method:"POST",
-    headers:{"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,
-      "Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
-    body:JSON.stringify({id:eKey,datos:datos,actualizado_en:new Date().toISOString()}),
-    keepalive:true
-  }).then(function(r){
-    if(r.ok){
-      if(_saveQueue[eKey]) _flushSave(eKey);
-      else{ mostrarEstado("Guardado","#2e7d32"); setTimeout(function(){mostrarEstado("","");},2000); }
-    } else {
-      if(intento<3) setTimeout(function(){_doSave(eKey,datos,intento+1);},800);
+
+function _doSave(datos,intento){
+  var body=JSON.stringify({perfiles:datos});
+  if(JB_BIN_ID){
+    // Actualizar bin existente
+    fetch(JB_URL+"/"+JB_BIN_ID,{
+      method:"PUT",
+      headers:{"Content-Type":"application/json","X-Master-Key":JB_KEY},
+      body:body
+    }).then(function(r){
+      if(r.ok){ mostrarEstado("Guardado","#2e7d32"); setTimeout(function(){mostrarEstado("","");},2000); }
+      else if(intento<3) setTimeout(function(){_doSave(datos,intento+1);},800);
       else mostrarEstado("Error al guardar","#c0392b");
-    }
-  }).catch(function(){
-    if(intento<3) setTimeout(function(){_doSave(eKey,datos,intento+1);},1000);
-    else mostrarEstado("Sin conexion","#c0392b");
+    }).catch(function(){
+      if(intento<3) setTimeout(function(){_doSave(datos,intento+1);},1000);
+      else mostrarEstado("Sin conexión","#c0392b");
+    });
+  } else {
+    // Crear bin nuevo
+    fetch(JB_URL,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Master-Key":JB_KEY,"X-Bin-Name":"vencimientos-cvrs","X-Bin-Private":"true"},
+      body:body
+    }).then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.metadata&&d.metadata.id){
+        JB_BIN_ID=d.metadata.id;
+        localStorage.setItem("cvrs_bin_id",JB_BIN_ID);
+        mostrarEstado("Guardado","#2e7d32");
+        setTimeout(function(){mostrarEstado("","");},2000);
+      } else mostrarEstado("Error al crear bin","#c0392b");
+    }).catch(function(){
+      if(intento<3) setTimeout(function(){_doSave(datos,intento+1);},1000);
+      else mostrarEstado("Sin conexión","#c0392b");
+    });
+  }
+}
+
+// Cargar todos los perfiles desde JSONBin
+function cargarDesdeNube(callback){
+  mostrarEstado("⟳ Cargando...","#1a5276");
+  if(!JB_BIN_ID){
+    // No hay bin todavía — arrancar vacío
+    mostrarEstado("","");
+    if(callback) callback();
+    return;
+  }
+  fetch(JB_URL+"/"+JB_BIN_ID+"/latest",{
+    headers:{"X-Master-Key":JB_KEY}
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(resp){
+    var datos=resp.record&&resp.record.perfiles;
+    if(!datos){ mostrarEstado("",""); if(callback) callback(); return; }
+    Object.keys(datos).forEach(function(k){
+      var d=datos[k];
+      if(!d) return;
+      if(!PERFILES[k]) PERFILES[k]={extras:{}};
+      var p=PERFILES[k];
+      ["razonSocial","denominacion","cuit","terminacion","grupo","grupoSicore","grupoAuton",
+       "tipoSujeto","tipoSociedad","cierreEjercicio","agenciaARCA","condicionIVA",
+       "iibbJurisdiccion","cuitIIBB",
+       "tieneIVA","tieneSicore","tieneConvenio","tieneGanancias","tieneBP",
+       "tieneAuton0123","tieneAuton456","tieneAuton789",
+       "tieneEmpleados","tieneArba","tieneAgip","tieneMisiones"
+      ].forEach(function(f){ if(d[f]!==undefined) p[f]=d[f]; });
+      if(d.extras){
+        p.extras=p.extras||{};
+        Object.keys(d.extras).forEach(function(mes){
+          var blq=d.extras[mes];
+          if((blq.items&&blq.items.length)||(blq.notas&&blq.notas.length)||(blq.excluidos&&blq.excluidos.length)){
+            p.extras[mes]={notas:blq.notas||[],items:blq.items||[],excluidos:blq.excluidos||[]};
+          }
+        });
+      }
+    });
+    mostrarEstado("Datos cargados","#2e7d32");
+    if(callback) callback();
+  })
+  .catch(function(){
+    mostrarEstado("Sin conexión — usando datos locales","#e67e22");
+    if(callback) callback();
   });
 }
-function guardarTodosNube(){ Object.keys(PERFILES).forEach(function(k){guardarPerfilNube(k);}); }
-window.addEventListener("beforeunload",function(){
-  Object.keys(_saveQueue).forEach(function(eKey){
-    var d=_saveQueue[eKey]; if(!d) return;
-    navigator.sendBeacon(SB_URL+"/rest/v1/"+SB_TABLE,
-      new Blob([JSON.stringify({id:eKey,datos:d})],{type:"application/json"}));
-  });
-  Object.keys(PERFILES).forEach(function(eKey){
-    if(_saveTimers[eKey]){
-      clearTimeout(_saveTimers[eKey]);
-      navigator.sendBeacon(SB_URL+"/rest/v1/"+SB_TABLE,
-        new Blob([JSON.stringify({id:eKey,datos:serializarPerfil(PERFILES[eKey])})],{type:"application/json"}));
-    }
-  });
-});
+
+// Ping ya no necesario — JSONBin no se pausa
 
 cargarDesdeNube(function(){
   poblarSelects();
